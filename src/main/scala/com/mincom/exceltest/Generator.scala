@@ -29,17 +29,17 @@ object Generator {
 
   def generate(name: String, datastore: Datastore, steps: Iterator[Step]) = {
     val method = steps.map(step => {
-      List(step.remark.map(_ => ""),
+      List(step.remark.map(_ => "").toList,
         // step.remark.map("// " + _),
         step.generate(datastore).map(_ + ";"),
-        if (Config.screenshots && step.screenshot) Some("""mfuiv2.captureScreenshot("test.png");""") else None,
-        None)
+        if (Config.screenshots && step.screenshot) List("""mfuiv2.captureScreenshot("test.png");""") else List(),
+        List())
     }).flatten.flatten.map("\t\t" + _).mkString("\n")
 
     """package com.mincom.qtptest;
 
 import com.mincom.ria.automated.AbstractMFUITest;
-import com.mincom.ellipse.rc.apiv2.*;
+import com.mincom.appfield.*;
 
 public class %s extends AbstractMFUITest {
         
@@ -83,43 +83,75 @@ public class %s extends AbstractMFUITest {
           Widget(split)
         }
       }
+    }, s match {
+      case "QUICKLAUNCH" => Unknown()
+      case _ => {
+        Page(s.split("_")(1))
+      }
     })
   }
 
-  case class DescWrapper(full: String, desc: Description)
+  case class DescWrapper(full: String, desc: Description, page: Page)
 
   trait Description
   case class QuickLaunch extends Description
   case class Menu(value: String) extends Description
-  case class ActionMenu extends Description
+  case class ActionMenu() extends Description
   case class Widget(value: String) extends Description
-  case class Message extends Description
+  case class Message() extends Description
+
+  trait Page {
+    def name: String
+  }
+  case class Search extends Page {
+    def name = "Search"
+  }
+  case class Detail extends Page {
+    def name = "Detail"
+  }
+  case class Unknown extends Page {
+    def name = ""
+  }
+
+  object Page {
+    def apply(value: String) = value match {
+      case "Search" => Search()
+      case _ => Detail()
+    }
+  }
 
   case class Step(app: String, description: DescWrapper, event: Event, value: List[Any], remark: Option[String], screenshot: Boolean) {
 
-    def getWidget(widget: Widget) = """%s.getWidget("%s")""" format (app, Dictionary.parse(app).getOrElse(description.full, "WARNING " + widget.value))
+    def getVar() = "%s.get%s()" format (app.toLowerCase, description.page.name)
 
-    def generate(datastore: Datastore) = {
+    def getWidget(widget: Widget) = """%s.get%s()""" format (getVar(), Dictionary.parse(app).getOrElse(description.full, "WARNING " + widget.value).capitalize)
 
-      def setValue(widget: Widget) = Some("""%s.setValue("%s")""" format (getWidget(widget), datastore(app, value(0))))
+    def generate(datastore: Datastore): List[String] = {
+
+      def setValue(widget: Widget) = List("""%s.setValue("%s")""" format (getWidget(widget), datastore(app, value(0))))
 
       (description.desc, event) match {
-        case (QuickLaunch(), Input()) => Some("""Application %s = mfuiv2.loadApp("%1$s")""" format value.get(0).toString().toLowerCase)
-        case (Menu("Actions"), Click()) => None
-        case (Menu("New"), Click()) => Some("""%s.clickNew()""" format app)
-        case (Menu("Search"), Click()) => Some("""%s.search()""" format app)
-        case (ActionMenu(), Select()) => Some("""%s.toolbarAction("%s")""" format (app, value(0)))
-        case (Message(), CheckProperty()) => Some("""assertEquals("%s", %s.getErrorMessages().get(0))""" format (value(1), app))
+        case (QuickLaunch(), Input()) => {
+          val name = value.get(0).toString();
+          val a = """%s %s = new %1$s(mfuiv2)""" format (name.toUpperCase, name.toLowerCase)
+          //val b = """%3$s.%s %s%1$s = %2$s.get%1$s()""" format ("Search", name.toLowerCase, name.toUpperCase)
+          List(a)
+        }
+        case (Menu("Actions"), Click()) => List()
+        case (Menu(menu), Click()) => List("""%s.getToolbar().click%s()""" format (getVar(), menu))
+        //case (Menu("Search"), Click()) => List("""%s.search()""" format getVar())
+        case (ActionMenu(), Select()) => List("""%s.getToolbar().click%s()""" format (getVar(), value(0)))
+        case (Message(), CheckProperty()) => List("""assertEquals("%s", %s.getMessage())""" format (value(1), getVar()))
         case (widget: Widget, Select()) => setValue(widget)
         case (widget: Widget, Input()) => setValue(widget)
         //case (widget: Widget, DoubleClickCell()) => Some("""grid.doubleClick(%s)""" format (value(0)))
-        case (Widget(_), Change()) => Some("""%s.selectTab("%s")""" format (app, value(0)))
+        //case (widget: Widget, Change()) => List("""%s.selectTab("%s")""" format (app, value(0)))
         case (widget: Widget, CheckProperty()) => value(0) match {
-          case "visible" => Some("""%s.assertVisible(%s)""" format (getWidget(widget), value(1) == "True"))
-          case "text" => Some("""%s.assertValue("%s")""" format (getWidget(widget), datastore(app, value(1))))
-          case _ => None
+          case "visible" => List("""%s.assertVisible(%s)""" format (getWidget(widget), value(1) == "True"))
+          case "text" => List("""%s.assertValue("%s")""" format (getWidget(widget), datastore(app, value(1))))
+          case _ => List()
         }
-        case (_, _) => None
+        case (_, _) => List()
       }
     }
   }
