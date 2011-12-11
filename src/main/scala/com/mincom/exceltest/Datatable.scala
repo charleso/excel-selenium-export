@@ -8,8 +8,6 @@ import scala.collection.JavaConversions._
 
 object Datatable extends Cache[String, String, String] {
 
-  val env: Map[String, String] = Map()
-
   def _parse(app: String) = {
     val wb = new HSSFWorkbook(new FileInputStream(Config.datatableFile))
     val sheet = wb.getSheet(app.toUpperCase());
@@ -19,7 +17,7 @@ object Datatable extends Cache[String, String, String] {
     val x = sheet.getRow(1).cellIterator()
       .map(cell => (columns(cell.getColumnIndex()), cell.toString))
       .toMap
-      .mapValues(a => if (a.startsWith("Environment(")) env(a.substring(13, a.length - 2)) else a)
+      .mapValues(a => if (a.startsWith("Environment(")) Config.env(a.substring(13, a.length - 2)) else a)
     x
   }
 

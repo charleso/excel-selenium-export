@@ -29,7 +29,7 @@ object Generator {
 
   def generate(name: String, datastore: Datastore, steps: Iterator[Step]) = {
     val method = steps.map(step => {
-      List(step.remark.map(_ => "").toList,
+      List(
         // step.remark.map("// " + _),
         step.generate(datastore).map(_ + ";"),
         if (Config.screenshots && step.screenshot) List("""mfuiv2.captureScreenshot("test.png");""") else List(),
@@ -70,10 +70,10 @@ public class %s extends AbstractMFUITest {
   object Description {
     def apply(s: String) = DescWrapper(s, s match {
       case "QUICKLAUNCH" => QuickLaunch()
+      case "TABNAVIGATOR" => TabNavigator()
       case _ => {
-        val split3 = s.split("_")(2)
         val split = s.split("_").last
-        if (split3.startsWith("Menu")) {
+        if (s.split("_").lift(2).map(_.startsWith("Menu")).getOrElse(false)) {
           Menu(split.substring(4))
         } else if (split == "ActionMenu") {
           ActionMenu()
@@ -85,6 +85,7 @@ public class %s extends AbstractMFUITest {
       }
     }, s match {
       case "QUICKLAUNCH" => Unknown()
+      case "TABNAVIGATOR" => Unknown()
       case _ => {
         Page(s.split("_")(1))
       }
@@ -95,6 +96,7 @@ public class %s extends AbstractMFUITest {
 
   trait Description
   case class QuickLaunch extends Description
+  case class TabNavigator extends Description
   case class Menu(value: String) extends Description
   case class ActionMenu() extends Description
   case class Widget(value: String) extends Description
@@ -131,6 +133,7 @@ public class %s extends AbstractMFUITest {
       def setValue(widget: Widget) = List("""%s.setValue("%s")""" format (getWidget(widget), datastore(app, value(0))))
 
       (description.desc, event) match {
+        //case (TabNavigator(), _) => List("// TODO Switch to %s" format value(0))
         case (QuickLaunch(), Input()) => {
           val name = value.get(0).toString();
           val a = """%s %s = new %1$s(mfuiv2)""" format (name.toUpperCase, name.toLowerCase)
@@ -138,7 +141,8 @@ public class %s extends AbstractMFUITest {
           List(a)
         }
         case (Menu("Actions"), Click()) => List()
-        case (Menu(menu), Click()) => List("""%s.getToolbar().click%s()""" format (getVar(), menu))
+        case (Menu(_), Select()) => List("""%s.getToolbar().click%s()""" format (getVar(), value(0).toString.replaceAll(" ", "").replaceAll("/", "")))
+        case (Menu(menu), Click()) => List("""%s.getToolbar().click%s()""" format (getVar(), Dictionary.parse(app).get(description.full).get))
         //case (Menu("Search"), Click()) => List("""%s.search()""" format getVar())
         case (ActionMenu(), Select()) => List("""%s.getToolbar().click%s()""" format (getVar(), value(0)))
         case (Message(), CheckProperty()) => List("""assertEquals("%s", %s.getMessage())""" format (value(1), getVar()))
@@ -147,7 +151,7 @@ public class %s extends AbstractMFUITest {
         //case (widget: Widget, DoubleClickCell()) => Some("""grid.doubleClick(%s)""" format (value(0)))
         //case (widget: Widget, Change()) => List("""%s.selectTab("%s")""" format (app, value(0)))
         case (widget: Widget, CheckProperty()) => value(0) match {
-          case "visible" => List("""%s.assertVisible(%s)""" format (getWidget(widget), value(1) == "True"))
+          case "visible" => if (!Dictionary.parse(app).get(description.full).get.contains(" ")) List("""%s.assertVisible(%s)""" format (getWidget(widget), value(1) == "True")) else List()
           case "text" => List("""%s.assertValue("%s")""" format (getWidget(widget), datastore(app, value(1))))
           case _ => List()
         }
